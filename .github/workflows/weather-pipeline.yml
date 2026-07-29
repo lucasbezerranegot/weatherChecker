@@ -57,4 +57,4 @@ jobs:
           PHONE_2: ${{ secrets.PHONE_2 }}
           APIKEY_2: ${{ secrets.APIKEY_2 }}
         run: |
-          python kita_weather.py --mode $MODE
+          python weatherChecker.py --mode $MODE
