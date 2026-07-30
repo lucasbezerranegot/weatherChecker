@@ -15,10 +15,10 @@ on:
 
   # Disparo Automático (Fuso Horário UTC!)
   schedule:
-    # Rodar às 07:00 em Munique (05:00 UTC) -> Checagem da Manhã
-    - cron: '0 5 * * *'
-    # Rodar às 20:30 em Munique (18:30 UTC) -> Checagem da Noite + Trailer
-    - cron: '30 18 * * *'
+    # Foge do pico das 05:00. Roda às 04:53 UTC (06:53 em Munique)
+    - cron: '53 4 * * *'
+    # Foge do pico das 18:00. Roda às 18:13 UTC (20:13 em Munique)
+    - cron: '13 18 * * *'
 
 jobs:
   run-weather-script:
