@@ -1,6 +1,7 @@
 import argparse
 import os
 import requests
+import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -27,16 +28,13 @@ def get_weather_description(wmo_code):
     return codes.get(wmo_code, f"❓ {wmo_code}")
 
 def send_whatsapp(message):
+    has_error = False # Flag para rastrear se alguma mensagem falhou
+    
     for person in RECIPIENTS:
-        # Debug 1: Verifica se as variáveis de ambiente foram carregadas
         if not person.get("phone") or not person.get("apikey"):
-            print("⚠️ Pulando envio: Número ou API Key não encontrados no ambiente.")
+            print("⚠️ Pulando envio: Número ou API Key não encontrados.")
             continue
             
-        # Debug 2: Esconde parte da chave para não vazar no log do GitHub, mas mostra o telefone
-        mascarada = person["apikey"][:3] + "***" if person.get("apikey") else "NONE"
-        print(f"Tentando enviar para {person['phone']} (Key: {mascarada})...")
-        
         url = "https://api.callmebot.com/whatsapp.php"
         params = {
             "phone": person["phone"],
@@ -46,18 +44,24 @@ def send_whatsapp(message):
         
         try:
             response = requests.get(url, params=params)
-            
-            # Debug 3: Se o CallMeBot retornar erro (ex: 403, 500), isso força o Python a pular para o except
             response.raise_for_status() 
             
-            print(f"✅ Sucesso! Resposta do servidor: {response.text}")
-            
-        except requests.exceptions.HTTPError as e:
-            # Captura erros de negócio do CallMeBot (ex: chave errada, formato de telefone inválido)
-            print(f"❌ Erro HTTP {response.status_code} para {person['phone']}: {response.text}")
+            # Checagem do Falso Positivo: Procura pela palavra 'Paused' ou 'resume'
+            if "Paused" in response.text or "resume" in response.text.lower():
+                print(f"❌ Erro para {person['phone']}: Conta pausada no CallMeBot!")
+                has_error = True
+            else:
+                print(f"✅ Sucesso ao enviar para {person['phone']}")
+                
         except Exception as e:
-            # Captura erros de rede (sem internet, timeout)
-            print(f"❌ Falha de rede ao enviar para {person['phone']}: {e}")
+            print(f"❌ Falha de requisição para {person['phone']}: {e}")
+            has_error = True
+            
+    # Se houve QUALQUER erro no loop, forçamos o script a quebrar com status 1.
+    # É isso que faz o GitHub Actions marcar o Job como "Failed" (Vermelho).
+    if has_error:
+        print("🚨 Encerrando script com erro devido a falhas no envio.")
+        sys.exit(1)
 
 def get_kita_forecast(mode):
     munich_tz = ZoneInfo("Europe/Berlin")
