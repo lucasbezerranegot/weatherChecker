@@ -17,8 +17,8 @@ on:
   schedule:
     # Foge do pico das 05:00. Roda às 04:53 UTC (06:53 em Munique)
     - cron: '53 4 * * *'
-    # Foge do pico das 18:00. Roda às 18:13 UTC (20:13 em Munique)
-    - cron: '13 18 * * *'
+    # Foge do pico das 18:00. Roda às 17:53 UTC (19:53 em Munique)
+    - cron: '53 17 * * *'
 
 jobs:
   run-weather-script:
