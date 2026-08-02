@@ -1,7 +1,7 @@
 name: Kita Weather Checker
 
 on:
-  # Disparo Manual (Aparece um botão com um Dropdown no GitHub)
+  # Disparo Manual (para você testar quando quiser)
   workflow_dispatch:
     inputs:
       mode:
@@ -13,12 +13,9 @@ on:
           - morning
           - night
 
-  # Disparo Automático (Fuso Horário UTC!)
-  schedule:
-    # Foge do pico das 05:00. Roda às 04:53 UTC (06:53 em Munique)
-    - cron: '53 4 * * *'
-    # Foge do pico das 18:00. Roda às 17:53 UTC (19:53 em Munique)
-    - cron: '53 17 * * *'
+  # O Novo Gatilho Externo (Webhook)
+  repository_dispatch:
+    types: [morning_check, night_check]
 
 jobs:
   run-weather-script:
@@ -38,13 +35,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
           
-      - name: Definir o Modo de Execução (Automático vs Manual)
+      - name: Definir o Modo de Execução (Webhook vs Manual)
         id: set-mode
-        # Se foi acionado manualmente, usa o input. Se foi automático às 18:30 UTC, é night. Senão, é morning.
+        # Lê a instrução enviada pelo cron-job.org ou pelo botão manual
         run: |
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
-          elif [ "${{ github.event.schedule }}" == "30 18 * * *" ]; then
+          elif [ "${{ github.event.action }}" == "night_check" ]; then
             echo "MODE=night" >> $GITHUB_ENV
           else
             echo "MODE=morning" >> $GITHUB_ENV
