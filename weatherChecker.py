@@ -11,7 +11,8 @@ LON = 11.576124
 
 RECIPIENTS = [
     {"phone": os.getenv("PHONE_1"), "apikey": os.getenv("APIKEY_1")},
-    {"phone": os.getenv("PHONE_2"), "apikey": os.getenv("APIKEY_2")}
+    {"phone": os.getenv("PHONE_2"), "apikey": os.getenv("APIKEY_2")},
+    {"phone": os.getenv("PHONE_3"), "apikey": os.getenv("APIKEY_3")}
 ]
 
 def get_weather_description(wmo_code):
