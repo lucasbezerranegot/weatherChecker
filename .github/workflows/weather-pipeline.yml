@@ -53,5 +53,7 @@ jobs:
           APIKEY_1: ${{ secrets.APIKEY_1 }}
           PHONE_2: ${{ secrets.PHONE_2 }}
           APIKEY_2: ${{ secrets.APIKEY_2 }}
+          PHONE_3: ${{ secrets.PHONE_3 }}
+          APIKEY_3: ${{ secrets.APIKEY_3 }}
         run: |
           python weatherChecker.py --mode $MODE
