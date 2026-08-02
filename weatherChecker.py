@@ -16,7 +16,7 @@ RECIPIENTS = [
 
 def get_weather_description(wmo_code):
     codes = {
-        0: "☀️ Céu limpo", 1: "🌤️ Maiormente limpo", 2: "⛅ Parcialmente nublado", 3: "☁️ Nublado",
+        0: "☀️ Céu limpo", 1: "🌤️ Majoritariamente limpo", 2: "⛅ Parcialmente nublado", 3: "☁️ Nublado",
         45: "🌫️ Neblina", 48: "🌫️ Névoa",
         51: "🌧️ Garoa leve", 53: "🌧️ Garoa moderada", 55: "🌧️ Garoa forte",
         61: "☔ Chuva leve", 63: "☔ Chuva moderada", 65: "☔ Chuva forte",
@@ -28,7 +28,7 @@ def get_weather_description(wmo_code):
     return codes.get(wmo_code, f"❓ {wmo_code}")
 
 def send_whatsapp(message):
-    has_error = False # Flag para rastrear se alguma mensagem falhou
+    has_error = False 
     
     for person in RECIPIENTS:
         if not person.get("phone") or not person.get("apikey"):
@@ -46,7 +46,6 @@ def send_whatsapp(message):
             response = requests.get(url, params=params)
             response.raise_for_status() 
             
-            # Checagem do Falso Positivo: Procura pela palavra 'Paused' ou 'resume'
             if "Paused" in response.text or "resume" in response.text.lower():
                 print(f"❌ Erro para {person['phone']}: Conta pausada no CallMeBot!")
                 has_error = True
@@ -57,8 +56,6 @@ def send_whatsapp(message):
             print(f"❌ Falha de requisição para {person['phone']}: {e}")
             has_error = True
             
-    # Se houve QUALQUER erro no loop, forçamos o script a quebrar com status 1.
-    # É isso que faz o GitHub Actions marcar o Job como "Failed" (Vermelho).
     if has_error:
         print("🚨 Encerrando script com erro devido a falhas no envio.")
         sys.exit(1)
@@ -67,7 +64,6 @@ def get_kita_forecast(mode):
     munich_tz = ZoneInfo("Europe/Berlin")
     now = datetime.now(munich_tz)
     
-    # O CI/CD define a regra, o Python apenas executa
     if mode == "night":
         target_date = now.date() + timedelta(days=1)
         day_label = "Amanhã"
@@ -76,12 +72,13 @@ def get_kita_forecast(mode):
         day_label = "Hoje"
 
     target_date_str = target_date.strftime("%Y-%m-%d")
+    is_weekend = target_date.weekday() >= 5 # 5 = Sábado, 6 = Domingo
 
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": LAT, "longitude": LON,
         "hourly": "temperature_2m,apparent_temperature,precipitation,weather_code,wind_gusts_10m",
-        "daily": "uv_index_max",
+        "daily": "uv_index_max,temperature_2m_max,temperature_2m_min", # Adicionado max e min para o Fim de Semana
         "timezone": "Europe/Berlin"
     }
     
@@ -105,39 +102,60 @@ def get_kita_forecast(mode):
         except ValueError:
             night_alert = "⚠️ Erro ao calcular previsão da madrugada.\n\n"
 
-    # --- LÓGICA DAS ROUPAS (Ida, Kita, Volta) ---
-    idx_0800 = hourly["time"].index(f"{target_date_str}T08:00")
-    idx_1600 = hourly["time"].index(f"{target_date_str}T16:00")
-    kita_slice = slice(idx_0800, idx_1600 + 1)
-    
-    temps = hourly["temperature_2m"][kita_slice]
-    feels = hourly["apparent_temperature"][kita_slice]
-    
+    # Preparação da variável UV (Usada tanto na semana quanto no fds)
     day_idx = daily["time"].index(target_date_str)
     uv_max = daily["uv_index_max"][day_idx]
     uv_alert = f"⚠️ *UV Alto ({uv_max})* - Protetor!" if uv_max >= 6.0 else f"☀️ UV: {uv_max} (OK)"
 
     # --- MONTAGEM DA MENSAGEM ---
     message = night_alert  
-    message += f"🧥 *Roupas do Kita* ({day_label} - {target_date.strftime('%d/%m')})\n\n"
     
-    message += f"🚲 *Ida (08:00):*\n"
-    message += f"🌡️ {hourly['temperature_2m'][idx_0800]}°C (Sens: {hourly['apparent_temperature'][idx_0800]}°C) | 💨 {hourly['wind_gusts_10m'][idx_0800]} km/h\n"
-    message += f"{get_weather_description(hourly['weather_code'][idx_0800])}\n\n"
+    if is_weekend:
+        message += f"🌳 *Fim de Semana em Família!* ({day_label} - {target_date.strftime('%d/%m')})\n\n"
+        
+        max_day = daily["temperature_2m_max"][day_idx]
+        min_day = daily["temperature_2m_min"][day_idx]
+        
+        message += f"📈 Máx: {max_day}°C | 📉 Mín: {min_day}°C\n"
+        message += f"{uv_alert}\n\n"
+        
+        # Avalia a chuva na janela útil (09h as 17h)
+        idx_0900 = hourly["time"].index(f"{target_date_str}T09:00")
+        idx_1700 = hourly["time"].index(f"{target_date_str}T17:00")
+        day_precip = hourly["precipitation"][idx_0900 : idx_1700 + 1]
+        
+        if any(p > 0.5 for p in day_precip if p is not None):
+             message += "☔ *Plano A: Brincadeiras em casa!* Tem chuva prevista para o dia.\n"
+        else:
+             message += "🛴 *Parquinho liberado!* Dia seco, perfeito para gastar energia lá fora.\n"
+             
+    else:
+        # Lógica original do Kita para Segunda a Sexta
+        idx_0800 = hourly["time"].index(f"{target_date_str}T08:00")
+        idx_1600 = hourly["time"].index(f"{target_date_str}T16:00")
+        kita_slice = slice(idx_0800, idx_1600 + 1)
+        
+        temps = hourly["temperature_2m"][kita_slice]
+        feels = hourly["apparent_temperature"][kita_slice]
+        
+        message += f"🧥 *Roupas do Kita* ({day_label} - {target_date.strftime('%d/%m')})\n\n"
+        
+        message += f"🚲 *Ida (08:00):*\n"
+        message += f"🌡️ {hourly['temperature_2m'][idx_0800]}°C (Sens: {hourly['apparent_temperature'][idx_0800]}°C) | 💨 {hourly['wind_gusts_10m'][idx_0800]} km/h\n"
+        message += f"{get_weather_description(hourly['weather_code'][idx_0800])}\n\n"
 
-    message += f"🎒 *No Kita (08:00 - 16:00):*\n"
-    message += f"📈 Máx: {max(temps)}°C (Sens: {max(feels)}°C)\n"
-    message += f"📉 Mín: {min(temps)}°C (Sens: {min(feels)}°C)\n"
-    message += f"{uv_alert}\n\n"
+        message += f"🎒 *No Kita (08:00 - 16:00):*\n"
+        message += f"📈 Máx: {max(temps)}°C (Sens: {max(feels)}°C)\n"
+        message += f"📉 Mín: {min(temps)}°C (Sens: {min(feels)}°C)\n"
+        message += f"{uv_alert}\n\n"
 
-    message += f"🚲 *Volta (16:00):*\n"
-    message += f"🌡️ {hourly['temperature_2m'][idx_1600]}°C (Sens: {hourly['apparent_temperature'][idx_1600]}°C) | 💨 {hourly['wind_gusts_10m'][idx_1600]} km/h\n"
-    message += f"{get_weather_description(hourly['weather_code'][idx_1600])}"
+        message += f"🚲 *Volta (16:00):*\n"
+        message += f"🌡️ {hourly['temperature_2m'][idx_1600]}°C (Sens: {hourly['apparent_temperature'][idx_1600]}°C) | 💨 {hourly['wind_gusts_10m'][idx_1600]} km/h\n"
+        message += f"{get_weather_description(hourly['weather_code'][idx_1600])}"
 
     send_whatsapp(message)
 
 if __name__ == "__main__":
-    # Configura o script para aceitar argumentos via terminal (ou CI/CD)
     parser = argparse.ArgumentParser(description="Script de previsão do tempo para o Kita")
     parser.add_argument("--mode", choices=["morning", "night"], required=True, help="Define o tipo de relatório")
     args = parser.parse_args()
