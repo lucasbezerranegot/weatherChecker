@@ -1,11 +1,11 @@
-name: Kita Weather Checker
+name: Weather Checker
 
 on:
-  # Disparo manual de contingência. O agendamento roda localmente no Docker.
+  # Manual contingency run. The regular schedule runs locally in Docker.
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Qual relatório executar?'
+        description: 'Which report should run?'
         required: true
         default: 'morning'
         type: choice
@@ -18,20 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: Baixar o código do repositório
+      - name: Check out the repository
         uses: actions/checkout@v4
         
-      - name: Configurar o Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
-      - name: Instalar dependências
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Executar o Script Python
+      - name: Run the weather report
         env:
           PHONE_1: ${{ secrets.PHONE_1 }}
           APIKEY_1: ${{ secrets.APIKEY_1 }}

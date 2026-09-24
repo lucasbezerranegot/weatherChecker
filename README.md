@@ -1,27 +1,30 @@
 # Weather Checker
 
-Envia previsões personalizadas pelo CallMeBot para várias famílias. Cada família
-pode ter localização, fuso horário, crianças, perfis térmicos e janela de
-parquinho próprios.
+Weather Checker sends personalized weather forecasts to multiple households
+through CallMeBot. Each household can have its own location, time zone,
+children, thermal profiles, recipients, and playground window.
 
-## Configuração familiar
+The messages sent by the application are intentionally written in Portuguese
+for its current users, while the project documentation and developer-facing
+configuration are maintained in English.
 
-Copie `households.example.json` para `households.json` e ajuste os dados. O
-arquivo real é ignorado pelo Git. Depois, execute com:
+## Household configuration
+
+Copy `households.example.json` to `households.json` and customize the data. The
+real configuration file is ignored by Git. Then run:
 
 ```bash
 export HOUSEHOLDS_CONFIG_PATH=households.json
 python3 weatherChecker.py --mode morning
 ```
 
-Também é possível colocar o JSON completo em `HOUSEHOLDS_CONFIG_JSON`. No
-GitHub Actions, esse valor deve ser criado como um repository secret com esse
-nome.
+You can also provide the complete JSON document through
+`HOUSEHOLDS_CONFIG_JSON`. In GitHub Actions, create a repository secret with
+that name.
 
-Cada entrada de `recipients` usa um slot numérico. As credenciais podem vir de
-`PHONE_<slot>` e `APIKEY_<slot>` ou, para uma configuração privada em arquivo ou
-secret, dos campos `phone` e `apikey` do próprio destinatário. Variáveis de
-ambiente têm prioridade.
+Each entry in `recipients` uses a numeric slot. Credentials can come from
+`PHONE_<slot>` and `APIKEY_<slot>`, or from the `phone` and `apikey` fields in a
+private configuration file or secret. Environment variables take precedence.
 
 ```json
 "recipients": {
@@ -34,8 +37,8 @@ ambiente têm prioridade.
 }
 ```
 
-Por padrão, um destinatário recebe recomendações para todas as crianças da sua
-família. Para selecionar apenas algumas:
+By default, a recipient receives recommendations for every child in their
+household. To select only specific children:
 
 ```json
 "4": {
@@ -44,22 +47,22 @@ família. Para selecionar apenas algumas:
 }
 ```
 
-Perfis térmicos aceitos:
+Supported thermal profiles:
 
-- `cold_sensitive`: escolhe aproximadamente uma faixa de roupa mais quente;
-- `neutral`: usa a sensação térmica prevista;
-- `warm_sensitive`: escolhe aproximadamente uma faixa mais leve.
+- `cold_sensitive`: selects approximately one warmer clothing range;
+- `neutral`: uses the forecast apparent temperature;
+- `warm_sensitive`: selects approximately one lighter clothing range.
 
-Se `HOUSEHOLDS_CONFIG_PATH` e `HOUSEHOLDS_CONFIG_JSON` não forem definidos, a
-configuração padrão mantém os slots 1 e 2 na família principal e o slot 3 em
-uma família independente, todos na localização atual de Munique.
+If neither `HOUSEHOLDS_CONFIG_PATH` nor `HOUSEHOLDS_CONFIG_JSON` is set, the
+default configuration keeps slots 1 and 2 in the primary household and slot 3
+in an independent household, all using central Munich as the default location.
 
-## Execução local com Docker
+## Local execution with Docker
 
-1. Copie `households.example.json` para `households.json` e personalize famílias,
-   crianças e destinatários.
-2. Copie `.env.example` para `.env` e preencha as credenciais do CallMeBot.
-3. Confira todas as mensagens sem enviá-las:
+1. Copy `households.example.json` to `households.json` and customize the
+   households, children, and recipients.
+2. Copy `.env.example` to `.env` and fill in the CallMeBot credentials.
+3. Preview all messages without sending them:
 
 ```bash
 HOUSEHOLDS_CONFIG_FILE=./households.json docker compose run --rm \
@@ -68,39 +71,39 @@ HOUSEHOLDS_CONFIG_FILE=./households.json docker compose run --rm \
   weather-checker python weatherChecker.py --mode night --dry-run
 ```
 
-4. Somente depois da conferência, inicie o scheduler:
+4. After reviewing the messages, start the scheduler:
 
 ```bash
 HOUSEHOLDS_CONFIG_FILE=./households.json docker compose up -d --build
 docker compose logs -f weather-checker
 ```
 
-O processo agenda os relatórios todos os dias às **07:00** e **20:00** no fuso
-`Europe/Berlin`. O horário continua sendo o horário local após as mudanças de
-verão/inverno. Jobs atrasados em até 30 minutos são consolidados e executados
-uma vez; execuções simultâneas são bloqueadas.
+The process schedules reports every day at **07:00** and **20:00** in the
+`Europe/Berlin` time zone. The schedule remains aligned with local time across
+daylight-saving changes. Jobs delayed by up to 30 minutes are coalesced and run
+once, and concurrent executions are prevented.
 
-Se uma consulta meteorológica ou qualquer envio falhar, a execução termina com
-erro e o health check do container fica `unhealthy` até uma execução completa
-ter sucesso. Antes do primeiro horário agendado, o container é considerado
-saudável.
+If a weather request or message delivery fails, the execution exits with an
+error and the container health check remains `unhealthy` until a complete run
+succeeds. Before the first scheduled run, the container is considered healthy.
 
-Para parar sem apagar configuração:
+To stop the service without deleting its configuration:
 
 ```bash
 docker compose down
 ```
 
-O workflow operacional do GitHub fica disponível apenas para disparos manuais de
-contingência. Eventos enviados pelo cron-job.org não iniciam mais relatórios,
-evitando mensagens duplicadas com o scheduler local.
+The GitHub operational workflow is available only for manual contingency runs.
+Requests sent by external cron services no longer start reports, preventing
+duplicate messages alongside the local scheduler.
 
-## CI
+## Continuous integration
 
-O workflow `CI` roda em cada push e pull request. Ele executa todos os testes,
-valida o Compose e constrói a imagem Docker.
+The `CI` workflow runs on every push and pull request. It executes the complete
+test suite, validates the Docker Compose configuration, and builds the Docker
+image.
 
-## Testes
+## Tests
 
 ```bash
 python -m pip install -r requirements-dev.txt
