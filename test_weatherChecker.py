@@ -549,3 +549,33 @@ def test_cli_returns_error_when_configuration_is_missing(monkeypatch, capsys):
 
     assert main(["--mode", "morning"]) == 1
     assert "Configuração incompleta" in capsys.readouterr().err
+
+
+def test_cli_dry_run_prints_all_messages_without_delivery(monkeypatch, capsys):
+    generate = MagicMock(
+        return_value=(
+            {1: "Família A", 2: "Família A", 3: "Família B"},
+            [],
+        )
+    )
+    monkeypatch.setattr("weatherChecker.generate_forecasts", generate)
+
+    assert main(["--mode", "morning", "--dry-run"]) == 0
+
+    output = capsys.readouterr().out
+    assert "Destinatário 1" in output
+    assert "Destinatário 2" in output
+    assert "Destinatário 3" in output
+    assert "Família B" in output
+    generate.assert_called_once_with("morning", require_credentials=False)
+
+
+def test_dry_run_config_does_not_require_callmebot_credentials():
+    config = load_application_config(
+        environment={},
+        configuration=multi_household_configuration(),
+        require_credentials=False,
+    )
+
+    assert len(config.recipients) == 3
+    assert all(not recipient.phone for recipient in config.recipients)

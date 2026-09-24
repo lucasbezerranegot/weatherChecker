@@ -180,17 +180,20 @@ def build_forecast_message(
     return f"{message}\n\n{clothing}"
 
 
-def run_forecast(
+def generate_forecasts(
     mode: str,
     weather_client: OpenMeteoClient | None = None,
-    delivery_client: CallMeBotClient | None = None,
     application_config: ApplicationConfig | None = None,
     environment: Mapping[str, str] | None = None,
     now: datetime | None = None,
-) -> dict[int, str]:
-    config = application_config or load_application_config(environment)
+    require_credentials: bool = True,
+) -> tuple[dict[int, str], list[tuple[Recipient, str]]]:
+    """Build every recipient-specific message without sending anything."""
+    config = application_config or load_application_config(
+        environment,
+        require_credentials=require_credentials,
+    )
     weather = weather_client or OpenMeteoClient()
-    delivery = delivery_client or CallMeBotClient()
     weather_cache: dict[tuple[float, float, str], dict[str, Any]] = {}
     message_cache: dict[tuple[str, tuple[str, ...]], str] = {}
     deliveries: list[tuple[Recipient, str]] = []
@@ -225,5 +228,23 @@ def run_forecast(
         messages[recipient.slot] = message
         deliveries.append((recipient, message))
 
-    delivery.send_many(deliveries)
+    return messages, deliveries
+
+
+def run_forecast(
+    mode: str,
+    weather_client: OpenMeteoClient | None = None,
+    delivery_client: CallMeBotClient | None = None,
+    application_config: ApplicationConfig | None = None,
+    environment: Mapping[str, str] | None = None,
+    now: datetime | None = None,
+) -> dict[int, str]:
+    messages, deliveries = generate_forecasts(
+        mode,
+        weather_client=weather_client,
+        application_config=application_config,
+        environment=environment,
+        now=now,
+    )
+    (delivery_client or CallMeBotClient()).send_many(deliveries)
     return messages

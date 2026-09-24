@@ -54,8 +54,56 @@ Se `HOUSEHOLDS_CONFIG_PATH` e `HOUSEHOLDS_CONFIG_JSON` não forem definidos, a
 configuração padrão mantém os slots 1 e 2 na família principal e o slot 3 em
 uma família independente, todos na localização atual de Munique.
 
+## Execução local com Docker
+
+1. Copie `households.example.json` para `households.json` e personalize famílias,
+   crianças e destinatários.
+2. Copie `.env.example` para `.env` e preencha as credenciais do CallMeBot.
+3. Confira todas as mensagens sem enviá-las:
+
+```bash
+HOUSEHOLDS_CONFIG_FILE=./households.json docker compose run --rm \
+  weather-checker python weatherChecker.py --mode morning --dry-run
+HOUSEHOLDS_CONFIG_FILE=./households.json docker compose run --rm \
+  weather-checker python weatherChecker.py --mode night --dry-run
+```
+
+4. Somente depois da conferência, inicie o scheduler:
+
+```bash
+HOUSEHOLDS_CONFIG_FILE=./households.json docker compose up -d --build
+docker compose logs -f weather-checker
+```
+
+O processo agenda os relatórios todos os dias às **07:00** e **20:00** no fuso
+`Europe/Berlin`. O horário continua sendo o horário local após as mudanças de
+verão/inverno. Jobs atrasados em até 30 minutos são consolidados e executados
+uma vez; execuções simultâneas são bloqueadas.
+
+Se uma consulta meteorológica ou qualquer envio falhar, a execução termina com
+erro e o health check do container fica `unhealthy` até uma execução completa
+ter sucesso. Antes do primeiro horário agendado, o container é considerado
+saudável.
+
+Para parar sem apagar configuração:
+
+```bash
+docker compose down
+```
+
+O disparo externo do GitHub permanece disponível durante a migração. Desative o
+agendamento no cron-job.org somente depois de validar o container local, para
+evitar períodos sem mensagem; não mantenha os dois schedulers ativos ao mesmo
+tempo para evitar mensagens duplicadas.
+
+## CI
+
+O workflow `CI` roda em cada push e pull request. Ele executa todos os testes,
+valida o Compose e constrói a imagem Docker.
+
 ## Testes
 
 ```bash
+python -m pip install -r requirements-dev.txt
 pytest -q
 ```

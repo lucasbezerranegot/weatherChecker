@@ -94,6 +94,7 @@ class ApplicationConfig:
 def load_application_config(
     environment: Mapping[str, str] | None = None,
     configuration: str | Mapping[str, Any] | None = None,
+    require_credentials: bool = True,
 ) -> ApplicationConfig:
     """Load configuration from JSON, a file, or the safe built-in default."""
     values = environ if environment is None else environment
@@ -116,7 +117,12 @@ def load_application_config(
 
     payload = _decode_configuration(raw_configuration)
     households = _parse_households(payload.get("households"))
-    recipients = _parse_recipients(payload.get("recipients"), households, values)
+    recipients = _parse_recipients(
+        payload.get("recipients"),
+        households,
+        values,
+        require_credentials=require_credentials,
+    )
     return ApplicationConfig(households=households, recipients=recipients)
 
 
@@ -237,6 +243,7 @@ def _parse_recipients(
     raw_recipients: Any,
     households: dict[str, Household],
     environment: Mapping[str, str],
+    require_credentials: bool = True,
 ) -> tuple[Recipient, ...]:
     if not isinstance(raw_recipients, dict) or not raw_recipients:
         raise ConfigurationError(
@@ -280,7 +287,7 @@ def _parse_recipients(
         apikey = environment.get(f"APIKEY_{slot}", "").strip() or _optional_string(
             raw_recipient.get("apikey")
         )
-        if not phone or not apikey:
+        if require_credentials and (not phone or not apikey):
             missing_credentials.append(slot)
             continue
         recipients.append(

@@ -6,7 +6,7 @@ import sys
 from weather_checker.config import load_recipients
 from weather_checker.delivery import CallMeBotClient
 from weather_checker.exceptions import WeatherCheckerError
-from weather_checker.service import run_forecast
+from weather_checker.service import generate_forecasts, run_forecast
 from weather_checker.weather import get_weather_description
 
 
@@ -28,10 +28,20 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Define o tipo de relatório",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Gera e exibe os relatórios sem enviar mensagens",
+    )
     args = parser.parse_args(argv)
 
     try:
-        get_kita_forecast(args.mode)
+        if args.dry_run:
+            messages, _ = generate_forecasts(args.mode, require_credentials=False)
+            for slot, message in messages.items():
+                print(f"\n===== Destinatário {slot} =====\n{message}")
+        else:
+            get_kita_forecast(args.mode)
     except WeatherCheckerError as exc:
         print(f"🚨 {exc}", file=sys.stderr)
         return 1
