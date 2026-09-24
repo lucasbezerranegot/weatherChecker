@@ -1,107 +1,298 @@
-import pytest
-from unittest.mock import patch, MagicMock
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
-# Importa as duas funções do seu script principal
-from weatherChecker import get_kita_forecast, send_whatsapp
+import pytest
+import requests
 
-# ==========================================
-# 1. DADOS FALSOS E PREPARAÇÃO (MOCKS)
-# ==========================================
+from weatherChecker import main
+from weather_checker.config import Recipient, load_recipients
+from weather_checker.delivery import CallMeBotClient
+from weather_checker.exceptions import (
+    ConfigurationError,
+    DeliveryError,
+    WeatherServiceError,
+)
+from weather_checker.service import build_forecast_message, run_forecast
+from weather_checker.weather import OpenMeteoClient
 
-# Variável de contatos falsos para os testes do CallMeBot
-MOCK_RECIPIENTS = [
-    {"phone": "+490000000", "apikey": "CHAVE_TESTE"}
-]
+MUNICH_TZ = ZoneInfo("Europe/Berlin")
+FIXED_NOW = datetime(2026, 9, 24, 20, 0, tzinfo=MUNICH_TZ)
 
-def create_mock_weather_data(today_str, tomorrow_str):
-    """Gera um JSON falso com 48 horas (hoje e amanhã) para o teste não quebrar a busca de 'agora'."""
-    hourly_times = [f"{today_str}T{str(i).zfill(2)}:00" for i in range(24)] + \
-                   [f"{tomorrow_str}T{str(i).zfill(2)}:00" for i in range(24)]
-    
-    temperatures = [10.0] * 48
-    temperatures[36] = 30.0 
-    
-    precipitation = [0.0] * 48
-    precipitation[26] = 5.5 
+
+def create_mock_weather_data(now: datetime = FIXED_NOW) -> dict:
+    today = now.date()
+    dates = [today + timedelta(days=offset) for offset in range(3)]
+    hourly_times = [
+        f"{day:%Y-%m-%d}T{hour:02d}:00"
+        for day in dates
+        for hour in range(24)
+    ]
+    size = len(hourly_times)
+    temperatures = [10.0] * size
+    precipitation = [0.0] * size
+
+    tomorrow_noon = hourly_times.index(f"{dates[1]:%Y-%m-%d}T12:00")
+    tomorrow_0200 = hourly_times.index(f"{dates[1]:%Y-%m-%d}T02:00")
+    temperatures[tomorrow_noon] = 30.0
+    precipitation[tomorrow_0200] = 5.5
 
     return {
         "hourly": {
             "time": hourly_times,
             "temperature_2m": temperatures,
-            "apparent_temperature": temperatures, 
+            "apparent_temperature": temperatures.copy(),
             "precipitation": precipitation,
-            "weather_code": [0] * 48, 
-            "wind_gusts_10m": [15.0] * 48
+            "weather_code": [0] * size,
+            "wind_gusts_10m": [15.0] * size,
         },
         "daily": {
-            "time": [today_str, tomorrow_str],
-            "uv_index_max": [3.0, 7.5] 
-        }
+            "time": [f"{day:%Y-%m-%d}" for day in dates],
+            "uv_index_max": [3.0, 7.5, 4.0],
+            "temperature_2m_max": [16.0, 30.0, 18.0],
+            "temperature_2m_min": [8.0, 10.0, 9.0],
+        },
     }
 
-# ==========================================
-# 2. TESTES DE INTEGRAÇÃO (WHATSAPP)
-# ==========================================
 
-def test_send_whatsapp_success():
-    """Garante que a função não quebra quando o CallMeBot responde com sucesso real."""
-    with patch("weatherChecker.RECIPIENTS", MOCK_RECIPIENTS), \
-         patch("weatherChecker.requests.get") as mock_get:
-        
-        mock_response = MagicMock()
-        mock_response.text = "Message queued successfully."
-        mock_get.return_value = mock_response
-        
-        try:
-            send_whatsapp("Teste de Sucesso")
-        except SystemExit:
-            pytest.fail("A função levantou SystemExit inesperadamente num cenário de sucesso!")
+def make_response(payload=None, text="OK") -> MagicMock:
+    response = MagicMock()
+    response.text = text
+    response.json.return_value = payload
+    response.raise_for_status.return_value = None
+    return response
 
 
-def test_send_whatsapp_paused_account():
-    """Garante que a função captura o falso positivo (HTTP 200 + 'Paused') e quebra o pipeline."""
-    with patch("weatherChecker.RECIPIENTS", MOCK_RECIPIENTS), \
-         patch("weatherChecker.requests.get") as mock_get:
-        
-        mock_response = MagicMock()
-        mock_response.text = "<h2>Your Account is <b>Paused</b> due to technical issues.</h2>"
-        mock_get.return_value = mock_response
-        
-        with pytest.raises(SystemExit) as exc_info:
-            send_whatsapp("Teste Conta Pausada")
-            
-        assert exc_info.value.code == 1
+def make_http_error(status: int) -> requests.HTTPError:
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(response=response)
 
 
-# ==========================================
-# 3. TESTES DE LÓGICA DE NEGÓCIO (CLIMA)
-# ==========================================
+def three_recipients() -> list[Recipient]:
+    return [
+        Recipient(phone=f"+49000000{number}", apikey=f"key-{number}")
+        for number in range(1, 4)
+    ]
 
-@patch("weatherChecker.send_whatsapp") 
-@patch("weatherChecker.requests.get")  
-def test_night_mode_detects_rain_and_high_uv(mock_get, mock_send_whatsapp):
-    """Testa se o modo noturno processa corretamente a chuva e o alerta UV."""
-    
-    munich_tz = ZoneInfo("Europe/Berlin")
-    now = datetime.now(munich_tz)
-    today_str = now.strftime("%Y-%m-%d")
-    tomorrow_str = (now.date() + timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    mock_response = MagicMock()
-    mock_response.json.return_value = create_mock_weather_data(today_str, tomorrow_str)
-    mock_get.return_value = mock_response
-    
-    get_kita_forecast(mode="night")
-    
-    args, kwargs = mock_send_whatsapp.call_args
-    sent_message = args[0]
-    
-    assert "TRAILER / BIKES" in sent_message
-    assert "5.5mm" in sent_message
-    assert "Máx: 30.0°C" in sent_message
-    
-    # CORREÇÃO: Procurando pela string exata que o seu script monta
-    assert "UV Alto" in sent_message 
-    assert "7.5" in sent_message
+
+def test_loads_all_three_required_recipients():
+    environment = {
+        "PHONE_1": "+491",
+        "APIKEY_1": "key-1",
+        "PHONE_2": "+492",
+        "APIKEY_2": "key-2",
+        "PHONE_3": "+493",
+        "APIKEY_3": "key-3",
+    }
+
+    recipients = load_recipients(environment)
+
+    assert [recipient.phone for recipient in recipients] == ["+491", "+492", "+493"]
+
+
+@pytest.mark.parametrize(
+    "environment, missing",
+    [
+        ({}, "1, 2, 3"),
+        (
+            {
+                "PHONE_1": "+491",
+                "APIKEY_1": "key-1",
+                "PHONE_2": "+492",
+                "APIKEY_2": "key-2",
+                "PHONE_3": "+493",
+            },
+            "3",
+        ),
+    ],
+)
+def test_missing_recipient_configuration_is_an_error(environment, missing):
+    with pytest.raises(ConfigurationError, match=missing):
+        load_recipients(environment)
+
+
+def test_delivery_succeeds_only_after_all_three_recipients_receive():
+    session = MagicMock()
+    session.get.side_effect = [make_response(), make_response(), make_response()]
+
+    CallMeBotClient(session=session).send("Teste", three_recipients())
+
+    assert session.get.call_count == 3
+    for call in session.get.call_args_list:
+        assert call.kwargs["timeout"] == (5.0, 20.0)
+
+
+def test_delivery_reports_partial_failure_and_still_attempts_every_recipient():
+    session = MagicMock()
+    failed = make_response()
+    failed.raise_for_status.side_effect = make_http_error(500)
+    session.get.side_effect = [make_response(), failed, make_response()]
+
+    with pytest.raises(DeliveryError, match="1 de 3"):
+        CallMeBotClient(session=session).send("Teste", three_recipients())
+
+    assert session.get.call_count == 3
+
+
+def test_delivery_treats_paused_account_as_failure():
+    session = MagicMock()
+    session.get.side_effect = [
+        make_response(),
+        make_response(text="Your account is Paused. Click to resume."),
+        make_response(),
+    ]
+
+    with pytest.raises(DeliveryError, match="conta pausada"):
+        CallMeBotClient(session=session).send("Teste", three_recipients())
+
+
+def test_delivery_timeout_is_failure_without_retrying_send():
+    session = MagicMock()
+    session.get.side_effect = [
+        requests.Timeout("timeout"),
+        make_response(),
+        make_response(),
+    ]
+
+    with pytest.raises(DeliveryError, match="1 de 3"):
+        CallMeBotClient(session=session).send("Teste", three_recipients())
+
+    assert session.get.call_count == 3
+
+
+def test_delivery_rejects_empty_recipient_list():
+    with pytest.raises(DeliveryError, match="Nenhum destinatário"):
+        CallMeBotClient(session=MagicMock()).send("Teste", [])
+
+
+def test_weather_client_retries_timeout_then_succeeds():
+    session = MagicMock()
+    session.get.side_effect = [
+        requests.Timeout("timeout"),
+        make_response(create_mock_weather_data()),
+    ]
+    sleeper = MagicMock()
+    client = OpenMeteoClient(session=session, sleeper=sleeper)
+
+    result = client.get_forecast()
+
+    assert result["hourly"]["time"]
+    assert session.get.call_count == 2
+    sleeper.assert_called_once_with(0.5)
+
+
+def test_weather_client_fails_after_three_network_attempts():
+    session = MagicMock()
+    session.get.side_effect = requests.Timeout("timeout")
+    sleeper = MagicMock()
+
+    with pytest.raises(WeatherServiceError, match="após 3 tentativas"):
+        OpenMeteoClient(session=session, sleeper=sleeper).get_forecast()
+
+    assert session.get.call_count == 3
+    assert sleeper.call_args_list[0].args == (0.5,)
+    assert sleeper.call_args_list[1].args == (1.0,)
+
+
+def test_weather_client_does_not_retry_non_retryable_http_error():
+    session = MagicMock()
+    response = make_response()
+    response.raise_for_status.side_effect = make_http_error(400)
+    session.get.return_value = response
+
+    with pytest.raises(WeatherServiceError, match="HTTP 400"):
+        OpenMeteoClient(session=session, sleeper=MagicMock()).get_forecast()
+
+    assert session.get.call_count == 1
+
+
+def test_weather_client_retries_temporary_http_error():
+    session = MagicMock()
+    unavailable = make_response()
+    unavailable.raise_for_status.side_effect = make_http_error(503)
+    session.get.side_effect = [unavailable, make_response(create_mock_weather_data())]
+
+    result = OpenMeteoClient(session=session, sleeper=MagicMock()).get_forecast()
+
+    assert result["daily"]["time"]
+    assert session.get.call_count == 2
+
+
+def test_weather_client_rejects_invalid_json():
+    session = MagicMock()
+    response = make_response()
+    response.json.side_effect = ValueError("bad json")
+    session.get.return_value = response
+
+    with pytest.raises(WeatherServiceError, match="JSON inválido"):
+        OpenMeteoClient(session=session).get_forecast()
+
+
+def test_weather_client_rejects_incomplete_payload():
+    session = MagicMock()
+    session.get.return_value = make_response({"hourly": {}, "daily": {}})
+
+    with pytest.raises(WeatherServiceError, match="incompleta"):
+        OpenMeteoClient(session=session).get_forecast()
+
+
+def test_weather_client_rejects_misaligned_series():
+    session = MagicMock()
+    payload = create_mock_weather_data()
+    payload["hourly"]["temperature_2m"] = []
+    session.get.return_value = make_response(payload)
+
+    with pytest.raises(WeatherServiceError, match="vazias ou desalinhadas"):
+        OpenMeteoClient(session=session).get_forecast()
+
+
+def test_night_message_preserves_rain_and_high_uv_logic():
+    message = build_forecast_message(
+        create_mock_weather_data(),
+        mode="night",
+        now=FIXED_NOW,
+    )
+
+    assert "TRAILER / BIKES" in message
+    assert "5.5mm" in message
+    assert "Máx: 30.0°C" in message
+    assert "UV Alto (7.5)" in message
+
+
+def test_weekend_message_from_github_is_preserved():
+    saturday = datetime(2026, 9, 26, 7, 0, tzinfo=MUNICH_TZ)
+    payload = create_mock_weather_data(saturday)
+    noon = payload["hourly"]["time"].index("2026-09-26T12:00")
+    payload["hourly"]["precipitation"][noon] = 0.6
+
+    message = build_forecast_message(payload, mode="morning", now=saturday)
+
+    assert "Fim de Semana em Família" in message
+    assert "Brincadeiras em casa" in message
+
+
+def test_run_forecast_delivers_built_message_to_all_recipients():
+    weather_client = MagicMock()
+    weather_client.get_forecast.return_value = create_mock_weather_data()
+    delivery_client = MagicMock()
+    recipients = three_recipients()
+
+    message = run_forecast(
+        "morning",
+        weather_client=weather_client,
+        delivery_client=delivery_client,
+        recipients=recipients,
+        now=FIXED_NOW,
+    )
+
+    delivery_client.send.assert_called_once_with(message, recipients)
+
+
+def test_cli_returns_error_when_configuration_is_missing(monkeypatch, capsys):
+    for number in range(1, 4):
+        monkeypatch.delenv(f"PHONE_{number}", raising=False)
+        monkeypatch.delenv(f"APIKEY_{number}", raising=False)
+
+    assert main(["--mode", "morning"]) == 1
+    assert "Configuração incompleta" in capsys.readouterr().err
