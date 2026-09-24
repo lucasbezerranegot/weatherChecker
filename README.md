@@ -8,6 +8,16 @@ The messages sent by the application are intentionally written in Portuguese
 for its current users, while the project documentation and developer-facing
 configuration are maintained in English.
 
+## Example weather report
+
+The report combines commute conditions, the daily temperature range, UV
+exposure, weather conditions, and child-specific clothing recommendations in a
+single WhatsApp message.
+
+<p align="center">
+  <img src="docs/images/weather-report-example.jpg" alt="Example WhatsApp weather report with clothing recommendations" width="520">
+</p>
+
 ## Household configuration
 
 Copy `households.example.json` to `households.json` and customize the data. The
