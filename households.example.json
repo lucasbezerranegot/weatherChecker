@@ -1,0 +1,47 @@
+{
+  "households": {
+    "family_1": {
+      "location": {
+        "latitude": 48.137154,
+        "longitude": 11.576124,
+        "timezone": "Europe/Berlin"
+      },
+      "children": {
+        "child_1": {
+          "label": "Criança 1",
+          "thermal_profile": "cold_sensitive"
+        },
+        "child_2": {
+          "label": "Criança 2",
+          "thermal_profile": "neutral"
+        }
+      },
+      "playground": {
+        "start": "16:00",
+        "end": "19:00"
+      }
+    },
+    "friend_family": {
+      "location": {
+        "latitude": 48.137154,
+        "longitude": 11.576124,
+        "timezone": "Europe/Berlin"
+      },
+      "children": {
+        "child_3": {
+          "label": "Criança 3",
+          "thermal_profile": "warm_sensitive"
+        }
+      },
+      "playground": {
+        "start": "16:00",
+        "end": "19:00"
+      }
+    }
+  },
+  "recipients": {
+    "1": {"household": "family_1"},
+    "2": {"household": "family_1"},
+    "3": {"household": "friend_family"}
+  }
+}

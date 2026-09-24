@@ -55,16 +55,21 @@ class OpenMeteoClient:
         self.backoff_seconds = backoff_seconds
         self.sleeper = sleeper
 
-    def get_forecast(self) -> dict[str, Any]:
+    def get_forecast(
+        self,
+        latitude: float = LAT,
+        longitude: float = LON,
+        timezone: str = "Europe/Berlin",
+    ) -> dict[str, Any]:
         params = {
-            "latitude": LAT,
-            "longitude": LON,
+            "latitude": latitude,
+            "longitude": longitude,
             "hourly": (
                 "temperature_2m,apparent_temperature,precipitation,"
                 "precipitation_probability,weather_code,wind_gusts_10m"
             ),
             "daily": "uv_index_max,temperature_2m_max,temperature_2m_min",
-            "timezone": "Europe/Berlin",
+            "timezone": timezone,
         }
 
         for attempt in range(1, self.max_attempts + 1):

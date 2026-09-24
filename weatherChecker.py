@@ -14,7 +14,7 @@ def send_whatsapp(message: str) -> None:
     CallMeBotClient().send(message, load_recipients())
 
 
-def get_kita_forecast(mode: str) -> str:
+def get_kita_forecast(mode: str) -> dict[int, str]:
     return run_forecast(mode)
 
 

@@ -22,11 +22,15 @@ class CallMeBotClient:
         self.timeout = timeout
 
     def send(self, message: str, recipients: list[Recipient]) -> None:
-        if not recipients:
+        self.send_many([(recipient, message) for recipient in recipients])
+
+    def send_many(self, deliveries: list[tuple[Recipient, str]]) -> None:
+        """Send recipient-specific messages and aggregate all failures."""
+        if not deliveries:
             raise DeliveryError("Nenhum destinatário configurado.")
 
         failures: list[str] = []
-        for recipient in recipients:
+        for recipient, message in deliveries:
             masked_phone = mask_phone(recipient.phone)
             try:
                 response = self.session.get(
@@ -51,7 +55,6 @@ class CallMeBotClient:
 
         if failures:
             raise DeliveryError(
-                f"Falha no envio para {len(failures)} de {len(recipients)} "
+                f"Falha no envio para {len(failures)} de {len(deliveries)} "
                 f"destinatário(s): {'; '.join(failures)}."
             )
-

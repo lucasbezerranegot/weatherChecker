@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
@@ -6,7 +7,13 @@ import pytest
 import requests
 
 from weatherChecker import main
-from weather_checker.config import Recipient, load_recipients
+from weather_checker.config import (
+    ChildProfile,
+    Household,
+    Recipient,
+    load_application_config,
+    load_recipients,
+)
 from weather_checker.delivery import CallMeBotClient
 from weather_checker.exceptions import (
     ConfigurationError,
@@ -77,6 +84,61 @@ def three_recipients() -> list[Recipient]:
     ]
 
 
+def recipient_environment(count: int = 3) -> dict[str, str]:
+    return {
+        key: value
+        for number in range(1, count + 1)
+        for key, value in (
+            (f"PHONE_{number}", f"+49000000{number}"),
+            (f"APIKEY_{number}", f"key-{number}"),
+        )
+    }
+
+
+def multi_household_configuration(friend_latitude: float = 48.137154) -> dict:
+    return {
+        "households": {
+            "family_1": {
+                "location": {
+                    "latitude": 48.137154,
+                    "longitude": 11.576124,
+                    "timezone": "Europe/Berlin",
+                },
+                "children": {
+                    "child_1": {
+                        "label": "Criança 1",
+                        "thermal_profile": "cold_sensitive",
+                    },
+                    "child_2": {
+                        "label": "Criança 2",
+                        "thermal_profile": "neutral",
+                    },
+                },
+                "playground": {"start": "16:00", "end": "19:00"},
+            },
+            "friend_family": {
+                "location": {
+                    "latitude": friend_latitude,
+                    "longitude": 11.576124,
+                    "timezone": "Europe/Berlin",
+                },
+                "children": {
+                    "child_3": {
+                        "label": "Criança 3",
+                        "thermal_profile": "warm_sensitive",
+                    }
+                },
+                "playground": {"start": "16:00", "end": "19:00"},
+            },
+        },
+        "recipients": {
+            "1": {"household": "family_1"},
+            "2": {"household": "family_1"},
+            "3": {"household": "friend_family"},
+        },
+    }
+
+
 def test_loads_all_three_required_recipients():
     environment = {
         "PHONE_1": "+491",
@@ -113,6 +175,62 @@ def test_missing_recipient_configuration_is_an_error(environment, missing):
         load_recipients(environment)
 
 
+def test_multi_household_config_maps_recipients_to_independent_children():
+    config = load_application_config(
+        recipient_environment(),
+        multi_household_configuration(),
+    )
+
+    assert config.recipients[0].child_ids == ("child_1", "child_2")
+    assert config.recipients[1].child_ids == ("child_1", "child_2")
+    assert config.recipients[2].household_id == "friend_family"
+    assert config.recipients[2].child_ids == ("child_3",)
+
+
+def test_multi_household_config_can_be_loaded_from_environment_json():
+    environment = recipient_environment()
+    environment["HOUSEHOLDS_CONFIG_JSON"] = json.dumps(
+        multi_household_configuration()
+    )
+
+    config = load_application_config(environment)
+
+    assert set(config.households) == {"family_1", "friend_family"}
+
+
+def test_recipient_count_is_driven_by_configuration():
+    configuration = multi_household_configuration()
+    configuration["recipients"]["4"] = {
+        "household": "family_1",
+        "children": ["child_2"],
+        "phone": "+494",
+        "apikey": "key-4",
+    }
+
+    config = load_application_config(recipient_environment(3), configuration)
+
+    assert len(config.recipients) == 4
+    assert config.recipients[3].child_ids == ("child_2",)
+
+
+def test_invalid_thermal_profile_is_rejected():
+    configuration = multi_household_configuration()
+    configuration["households"]["friend_family"]["children"]["child_3"][
+        "thermal_profile"
+    ] = "always_jacket"
+
+    with pytest.raises(ConfigurationError, match="Perfil térmico inválido"):
+        load_application_config(recipient_environment(), configuration)
+
+
+def test_recipient_cannot_reference_child_from_another_household():
+    configuration = multi_household_configuration()
+    configuration["recipients"]["3"]["children"] = ["child_1"]
+
+    with pytest.raises(ConfigurationError, match="não existe"):
+        load_application_config(recipient_environment(), configuration)
+
+
 def test_delivery_succeeds_only_after_all_three_recipients_receive():
     session = MagicMock()
     session.get.side_effect = [make_response(), make_response(), make_response()]
@@ -122,6 +240,19 @@ def test_delivery_succeeds_only_after_all_three_recipients_receive():
     assert session.get.call_count == 3
     for call in session.get.call_args_list:
         assert call.kwargs["timeout"] == (5.0, 20.0)
+
+
+def test_delivery_sends_each_recipient_its_own_message():
+    session = MagicMock()
+    session.get.side_effect = [make_response(), make_response()]
+    recipients = three_recipients()[:2]
+
+    CallMeBotClient(session=session).send_many(
+        [(recipients[0], "Mensagem A"), (recipients[1], "Mensagem B")]
+    )
+
+    assert session.get.call_args_list[0].kwargs["params"]["text"] == "Mensagem A"
+    assert session.get.call_args_list[1].kwargs["params"]["text"] == "Mensagem B"
 
 
 def test_delivery_reports_partial_failure_and_still_attempts_every_recipient():
@@ -323,24 +454,95 @@ def test_weekday_night_report_does_not_include_playground_advice():
     assert "Parquinho:" not in message
 
 
-def test_run_forecast_delivers_built_message_to_all_recipients():
+def test_thermal_profiles_generate_different_clothing_recommendations():
+    household = Household(
+        household_id="test",
+        latitude=48.1,
+        longitude=11.6,
+        timezone="Europe/Berlin",
+        children=(
+            ChildProfile("cold", "Frio", "cold_sensitive"),
+            ChildProfile("warm", "Calor", "warm_sensitive"),
+        ),
+    )
+
+    message = build_forecast_message(
+        create_mock_weather_data(),
+        mode="morning",
+        now=FIXED_NOW,
+        household=household,
+    )
+
+    cold_line = next(line for line in message.splitlines() if "*Frio:*" in line)
+    warm_line = next(line for line in message.splitlines() if "*Calor:*" in line)
+    assert "jaqueta quente" in cold_line
+    assert "jaqueta de meia-estação" in warm_line
+
+
+def test_clothing_recommendation_adds_weather_protection():
+    payload = create_mock_weather_data()
+    noon = payload["hourly"]["time"].index("2026-09-24T12:00")
+    payload["hourly"]["precipitation"][noon] = 0.2
+    payload["hourly"]["wind_gusts_10m"][noon] = 35.0
+
+    message = build_forecast_message(payload, mode="morning", now=FIXED_NOW)
+
+    assert "camada corta-vento" in message
+    assert "impermeável, botas e meias extras" in message
+    assert "chapéu e protetor solar" in message
+
+
+def test_run_forecast_sends_family_specific_messages_and_reuses_location():
     weather_client = MagicMock()
     weather_client.get_forecast.return_value = create_mock_weather_data()
     delivery_client = MagicMock()
-    recipients = three_recipients()
+    config = load_application_config(
+        recipient_environment(),
+        multi_household_configuration(),
+    )
 
-    message = run_forecast(
+    messages = run_forecast(
         "morning",
         weather_client=weather_client,
         delivery_client=delivery_client,
-        recipients=recipients,
+        application_config=config,
         now=FIXED_NOW,
     )
 
-    delivery_client.send.assert_called_once_with(message, recipients)
+    weather_client.get_forecast.assert_called_once()
+    deliveries = delivery_client.send_many.call_args.args[0]
+    assert len(deliveries) == 3
+    assert messages[1] == messages[2]
+    assert "Criança 1" in messages[1]
+    assert "Criança 2" in messages[1]
+    assert "Criança 3" not in messages[1]
+    assert "Criança 3" in messages[3]
+    assert "Criança 1" not in messages[3]
+
+
+def test_run_forecast_fetches_weather_for_each_unique_location():
+    weather_client = MagicMock()
+    weather_client.get_forecast.return_value = create_mock_weather_data()
+    delivery_client = MagicMock()
+    config = load_application_config(
+        recipient_environment(),
+        multi_household_configuration(friend_latitude=49.0),
+    )
+
+    run_forecast(
+        "morning",
+        weather_client=weather_client,
+        delivery_client=delivery_client,
+        application_config=config,
+        now=FIXED_NOW,
+    )
+
+    assert weather_client.get_forecast.call_count == 2
 
 
 def test_cli_returns_error_when_configuration_is_missing(monkeypatch, capsys):
+    monkeypatch.delenv("HOUSEHOLDS_CONFIG_JSON", raising=False)
+    monkeypatch.delenv("HOUSEHOLDS_CONFIG_PATH", raising=False)
     for number in range(1, 4):
         monkeypatch.delenv(f"PHONE_{number}", raising=False)
         monkeypatch.delenv(f"APIKEY_{number}", raising=False)
