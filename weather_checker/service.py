@@ -10,6 +10,8 @@ from .exceptions import WeatherServiceError
 from .weather import OpenMeteoClient, get_weather_description
 
 MUNICH_TZ = ZoneInfo("Europe/Berlin")
+PLAYGROUND_RAIN_MM_THRESHOLD = 0.0
+PLAYGROUND_RAIN_PROBABILITY_THRESHOLD = 50
 
 
 def _time_index(values: list[str], value: str) -> int:
@@ -19,6 +21,27 @@ def _time_index(values: list[str], value: str) -> int:
         raise WeatherServiceError(
             f"Open-Meteo não retornou o horário necessário: {value}."
         ) from exc
+
+
+def _playground_advice(
+    hourly: dict[str, list[Any]],
+    start_index: int,
+    end_index: int,
+) -> str:
+    window = slice(start_index, end_index + 1)
+    precipitation = hourly["precipitation"][window]
+    probabilities = hourly["precipitation_probability"][window]
+    rain_expected = any(
+        value is not None and value > PLAYGROUND_RAIN_MM_THRESHOLD
+        for value in precipitation
+    ) or any(
+        value is not None and value >= PLAYGROUND_RAIN_PROBABILITY_THRESHOLD
+        for value in probabilities
+    )
+
+    if rain_expected:
+        return "☔ *Parquinho:* Hoje não tem parquinho — há chuva prevista."
+    return "🛝 *Parquinho:* Hoje tem parquinho — previsão seca."
 
 
 def build_forecast_message(
@@ -104,7 +127,10 @@ def build_forecast_message(
     message += "🎒 *No Kita (08:00 - 16:00):*\n"
     message += f"📈 Máx: {max(temps)}°C (Sens: {max(feels)}°C)\n"
     message += f"📉 Mín: {min(temps)}°C (Sens: {min(feels)}°C)\n"
-    message += f"{uv_alert}\n\n"
+    message += f"{uv_alert}\n"
+    if mode == "morning":
+        message += f"{_playground_advice(hourly, idx_0800, idx_1600)}\n"
+    message += "\n"
     message += "🚲 *Volta (16:00):*\n"
     message += (
         f"🌡️ {hourly['temperature_2m'][idx_1600]}°C "
@@ -128,4 +154,3 @@ def run_forecast(
     message = build_forecast_message(weather.get_forecast(), mode, now=now)
     delivery.send(message, configured_recipients)
     return message
-

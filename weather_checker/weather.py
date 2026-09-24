@@ -61,7 +61,7 @@ class OpenMeteoClient:
             "longitude": LON,
             "hourly": (
                 "temperature_2m,apparent_temperature,precipitation,"
-                "weather_code,wind_gusts_10m"
+                "precipitation_probability,weather_code,wind_gusts_10m"
             ),
             "daily": "uv_index_max,temperature_2m_max,temperature_2m_min",
             "timezone": "Europe/Berlin",
@@ -112,6 +112,7 @@ class OpenMeteoClient:
                 "temperature_2m",
                 "apparent_temperature",
                 "precipitation",
+                "precipitation_probability",
                 "weather_code",
                 "wind_gusts_10m",
             },
