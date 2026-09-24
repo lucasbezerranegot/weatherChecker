@@ -12,7 +12,7 @@ services:
       SCHEDULER_TIMEZONE: Europe/Berlin
       TZ: Europe/Berlin
     volumes:
-      - ${HOUSEHOLDS_CONFIG_FILE:-./households.example.json}:/run/config/households.json:ro
+      - ${HOUSEHOLDS_CONFIG_FILE:-./households.json}:/run/config/households.json:ro
     tmpfs:
       - /tmp:size=1m,mode=1777
     healthcheck:
