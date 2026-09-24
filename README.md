@@ -91,10 +91,9 @@ Para parar sem apagar configuração:
 docker compose down
 ```
 
-O disparo externo do GitHub permanece disponível durante a migração. Desative o
-agendamento no cron-job.org somente depois de validar o container local, para
-evitar períodos sem mensagem; não mantenha os dois schedulers ativos ao mesmo
-tempo para evitar mensagens duplicadas.
+O workflow operacional do GitHub fica disponível apenas para disparos manuais de
+contingência. Eventos enviados pelo cron-job.org não iniciam mais relatórios,
+evitando mensagens duplicadas com o scheduler local.
 
 ## CI
 

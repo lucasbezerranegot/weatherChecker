@@ -1,7 +1,7 @@
 name: Kita Weather Checker
 
 on:
-  # Disparo Manual (para você testar quando quiser)
+  # Disparo manual de contingência. O agendamento roda localmente no Docker.
   workflow_dispatch:
     inputs:
       mode:
@@ -12,10 +12,6 @@ on:
         options:
           - morning
           - night
-
-  # O Novo Gatilho Externo (Webhook)
-  repository_dispatch:
-    types: [morning_check, night_check]
 
 jobs:
   run-weather-script:
@@ -35,18 +31,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-      - name: Definir o Modo de Execução (Webhook vs Manual)
-        id: set-mode
-        # Lê a instrução enviada pelo cron-job.org ou pelo botão manual
-        run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            echo "MODE=${{ github.event.inputs.mode }}" >> $GITHUB_ENV
-          elif [ "${{ github.event.action }}" == "night_check" ]; then
-            echo "MODE=night" >> $GITHUB_ENV
-          else
-            echo "MODE=morning" >> $GITHUB_ENV
-          fi
-          
       - name: Executar o Script Python
         env:
           PHONE_1: ${{ secrets.PHONE_1 }}
@@ -57,4 +41,4 @@ jobs:
           APIKEY_3: ${{ secrets.APIKEY_3 }}
           HOUSEHOLDS_CONFIG_JSON: ${{ secrets.HOUSEHOLDS_CONFIG_JSON }}
         run: |
-          python weatherChecker.py --mode $MODE
+          python weatherChecker.py --mode "${{ github.event.inputs.mode }}"
