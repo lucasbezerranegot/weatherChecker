@@ -275,8 +275,8 @@ def test_weekend_message_from_github_is_preserved():
 
 def test_weekday_morning_reports_no_playground_when_rain_is_forecast():
     payload = create_mock_weather_data()
-    noon = payload["hourly"]["time"].index("2026-09-24T12:00")
-    payload["hourly"]["precipitation"][noon] = 0.1
+    after_kita = payload["hourly"]["time"].index("2026-09-24T17:00")
+    payload["hourly"]["precipitation"][after_kita] = 0.1
 
     message = build_forecast_message(payload, mode="morning", now=FIXED_NOW)
 
@@ -285,8 +285,8 @@ def test_weekday_morning_reports_no_playground_when_rain_is_forecast():
 
 def test_weekday_morning_uses_rain_probability_for_playground():
     payload = create_mock_weather_data()
-    noon = payload["hourly"]["time"].index("2026-09-24T12:00")
-    payload["hourly"]["precipitation_probability"][noon] = 50
+    evening = payload["hourly"]["time"].index("2026-09-24T19:00")
+    payload["hourly"]["precipitation_probability"][evening] = 50
 
     message = build_forecast_message(payload, mode="morning", now=FIXED_NOW)
 
@@ -301,6 +301,16 @@ def test_weekday_morning_reports_playground_when_forecast_is_dry():
     )
 
     assert "Hoje tem parquinho" in message
+
+
+def test_weekday_playground_advice_appears_after_kita_return():
+    message = build_forecast_message(
+        create_mock_weather_data(),
+        mode="morning",
+        now=FIXED_NOW,
+    )
+
+    assert message.index("Volta (16:00)") < message.index("Parquinho:")
 
 
 def test_weekday_night_report_does_not_include_playground_advice():

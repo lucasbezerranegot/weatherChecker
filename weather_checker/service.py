@@ -110,6 +110,7 @@ def build_forecast_message(
 
     idx_0800 = _time_index(hourly["time"], f"{target_date_str}T08:00")
     idx_1600 = _time_index(hourly["time"], f"{target_date_str}T16:00")
+    idx_1900 = _time_index(hourly["time"], f"{target_date_str}T19:00")
     kita_slice = slice(idx_0800, idx_1600 + 1)
     temps = hourly["temperature_2m"][kita_slice]
     feels = hourly["apparent_temperature"][kita_slice]
@@ -127,10 +128,7 @@ def build_forecast_message(
     message += "🎒 *No Kita (08:00 - 16:00):*\n"
     message += f"📈 Máx: {max(temps)}°C (Sens: {max(feels)}°C)\n"
     message += f"📉 Mín: {min(temps)}°C (Sens: {min(feels)}°C)\n"
-    message += f"{uv_alert}\n"
-    if mode == "morning":
-        message += f"{_playground_advice(hourly, idx_0800, idx_1600)}\n"
-    message += "\n"
+    message += f"{uv_alert}\n\n"
     message += "🚲 *Volta (16:00):*\n"
     message += (
         f"🌡️ {hourly['temperature_2m'][idx_1600]}°C "
@@ -138,6 +136,8 @@ def build_forecast_message(
         f"💨 {hourly['wind_gusts_10m'][idx_1600]} km/h\n"
     )
     message += get_weather_description(hourly["weather_code"][idx_1600])
+    if mode == "morning":
+        message += f"\n\n{_playground_advice(hourly, idx_1600, idx_1900)}"
     return message
 
 
